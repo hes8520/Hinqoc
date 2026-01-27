@@ -291,7 +291,7 @@ public class PlayerController : MonoBehaviour
 
             if (Random.value < realFreezeChance)
             {
-                if (typewriterUI != null) typewriterUI.ShowMessage("!얼음!"); 
+                if (typewriterUI != null) typewriterUI.ShowMessage("!얼음"); 
                 PlaySfx(freezeSfx); 
                 isFrozen = true; isCharging = false;
                 if (arrowIndicator != null) arrowIndicator.gameObject.SetActive(false);
