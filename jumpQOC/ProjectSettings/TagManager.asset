@@ -9,6 +9,7 @@ TagManager:
   - StoryBlock
   - FreezeTrigger
   - Zone2
+  - WooferStep
   layers:
   - Default
   - TransparentFX

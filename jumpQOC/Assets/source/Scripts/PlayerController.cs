@@ -47,18 +47,16 @@ public class PlayerController : MonoBehaviour
     [Header("11. 오디오 설정")]
     public AudioSource bgmAudioSource; 
     public AudioSource sfxAudioSource; 
-    
     [Range(0f, 1f)] public float bgmVolume = 0.5f; 
     [Range(0f, 1f)] public float sfxVolume = 1.0f; 
-    public float bgmFadeDuration = 1.0f; // [추가됨] 브금 꺼지는 시간 (1초)
+    public float bgmFadeDuration = 1.0f;
+    public float landSoundThreshold = 20f; // 에러 해결용 변수 추가
 
     [Space(10)]
     public AudioClip area1Bgm;  
     public AudioClip jumpSfx;   
     public AudioClip landSfx;   
     public AudioClip freezeSfx; 
-    
-    public float landSoundThreshold = 20f; 
 
     // 내부 변수
     private float currentFriction; 
@@ -74,9 +72,8 @@ public class PlayerController : MonoBehaviour
     private float jumpCooldown = 0f;
     private bool isFrozen = false;          
     private bool isFreezeTrapActive = false; 
-    
     private Coroutine freezeCoroutine; 
-    private bool isFadingOut = false; // [추가됨] 지금 소리가 줄어드는 중인가?
+    private bool isFadingOut = false;
 
     void Start()
     {
@@ -88,9 +85,7 @@ public class PlayerController : MonoBehaviour
         currentFriction = groundDecel;
 
         if (mainCamera == null) mainCamera = Camera.main; 
-        if (mainCamera == null) { mainCamera = FindFirstObjectByType<Camera>(); if (mainCamera == null) mainCamera = FindObjectOfType<Camera>(); }
         if (arrowIndicator != null) arrowIndicator.gameObject.SetActive(false);
-        if (snowParticle != null && snowParticle.isPlaying) snowParticle.Stop();
         
         if (bgmAudioSource != null) bgmAudioSource.volume = bgmVolume;
 
@@ -103,11 +98,10 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        // [수정됨] 페이드 아웃 중이 아닐 때만 볼륨 슬라이더 값 적용
-        if (bgmAudioSource != null && !isFadingOut) 
-        {
-            bgmAudioSource.volume = bgmVolume;
-        }
+        if (Input.GetKeyDown(KeyCode.A)) Debug.Log("A키 인식 성공!");
+            if (Input.GetKeyDown(KeyCode.LeftArrow)) Debug.Log("왼쪽 화살표 인식 성공!");
+
+        if (bgmAudioSource != null && !isFadingOut) bgmAudioSource.volume = bgmVolume;
 
         if (jumpCooldown > 0) { jumpCooldown -= Time.deltaTime; isGrounded = false; }
         else
@@ -142,43 +136,53 @@ public class PlayerController : MonoBehaviour
         HandleJumpInput();
     }
 
-    void FixedUpdate()
+ void FixedUpdate()
+{
+    if (jumpCooldown > 0) return;
+    if (isFrozen) { rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y); return; }
+
+    // 1. WASD 입력 받기
+    float xInput = Input.GetAxisRaw("Horizontal");
+
+    // 2. 이동 제한 조건 수정 (핵심!)
+    if (isOnNoControlIce) 
     {
-        if (jumpCooldown > 0) return;
-        if (isFrozen) { rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y); return; }
-
-        float xInput = 0f;
-        if (isOnNoControlIce) xInput = 0f; 
-        else if (isCharging) { if (isOnIce) xInput = 0f; else return; }
-        else { xInput = Input.GetAxisRaw("Horizontal"); }
-
-        if (isGrounded && xInput != 0 && !isCharging && !isOnNoControlIce)
-        {
-            if (Mathf.Abs(rb.linearVelocity.x) < 0.05f) 
-            {
-                rb.position += new Vector2(0, 0.05f);
-            }
-        }
-
-        float targetSpeed = xInput * moveSpeed;
-        float changeRate;
-        if (isGrounded)
-        {
-            if (isOnNoControlIce) changeRate = noControlDecel;
-            else if (Mathf.Abs(targetSpeed) > 0.01f) changeRate = isOnIce ? iceAcceleration : groundDecel;
-            else changeRate = currentFriction;
-        }
-        else { changeRate = 5f; }
-
-        float newX = Mathf.MoveTowards(rb.linearVelocity.x, targetSpeed, changeRate * Time.fixedDeltaTime);
-        rb.linearVelocity = new Vector2(newX, rb.linearVelocity.y);
-
-        if (xInput != 0 && !isCharging && !isOnNoControlIce)
-        {
-            float direction = xInput > 0 ? 1 : -1;
-            transform.localScale = new Vector3(Mathf.Abs(originalScale.x) * direction, originalScale.y, originalScale.z);
-        }
+        xInput = 0f; 
     }
+    else if (isCharging && !isOnIce) 
+    {
+        // 땅 위에서 기 모을 때만 이동을 막음. 
+        // 만약 기 모으는 중에도 움직이고 싶다면 이 else if 블록을 아예 지우세요.
+        xInput = 0f; 
+    }
+
+    // 3. 이동 속도 계산 (Math -> Mathf로 수정)
+    float targetSpeed = xInput * moveSpeed;
+    float changeRate;
+
+    if (isGrounded)
+    {
+        if (isOnNoControlIce) changeRate = noControlDecel;
+        // Math.Abs를 Mathf.Abs로 수정하여 에러 해결
+        else if (Mathf.Abs(targetSpeed) > 0.01f) changeRate = isOnIce ? iceAcceleration : groundDecel;
+        else changeRate = currentFriction;
+    }
+    else 
+    {
+        changeRate = 5f; 
+    }
+
+    // 4. 물리 적용
+    float newX = Mathf.MoveTowards(rb.linearVelocity.x, targetSpeed, changeRate * Time.fixedDeltaTime);
+    rb.linearVelocity = new Vector2(newX, rb.linearVelocity.y);
+
+    // 5. 방향 전환
+    if (xInput != 0 && !isCharging && !isOnNoControlIce)
+    {
+        float direction = xInput > 0 ? 1 : -1;
+        transform.localScale = new Vector3(Mathf.Abs(originalScale.x) * direction, originalScale.y, originalScale.z);
+    }
+}
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
@@ -194,85 +198,50 @@ public class PlayerController : MonoBehaviour
         {
             if (tag == "FreezeTrigger")
             {
-                // [수정됨] 눈이 멈춰있었다면 다시 켬
                 if (snowParticle != null && !snowParticle.isPlaying) snowParticle.Play();
-                
-                // 브금 켜기 (페이드 아웃 중이었다면 취소하고 다시 켜기)
                 if (bgmAudioSource != null && area1Bgm != null)
                 {
-                    // 다른 브금이 나오고 있거나, 꺼져있다면
                     if (!bgmAudioSource.isPlaying || bgmAudioSource.clip != area1Bgm)
                     {
-                        isFadingOut = false; // 혹시 페이드 아웃 중이었다면 중단
-                        bgmAudioSource.volume = bgmVolume; // 볼륨 복구
+                        isFadingOut = false;
+                        bgmAudioSource.volume = bgmVolume;
                         bgmAudioSource.clip = area1Bgm; 
                         bgmAudioSource.loop = true; 
                         bgmAudioSource.Play();
                     }
                 }
-
-                if (!isFreezeTrapActive) 
-                { 
-                    isFreezeTrapActive = true; 
-                    freezeCoroutine = StartCoroutine(PeriodicFreezeRoutine()); 
-                }
+                if (!isFreezeTrapActive) { isFreezeTrapActive = true; freezeCoroutine = StartCoroutine(PeriodicFreezeRoutine()); }
             }
-            // === 2구역 입구 ===
-            else if (tag == "Zone2")
-            {
-                StopZone1Effects();
-            }
-            else if (tag == "StoryBlock")
-            {
-                if (typewriterUI != null) typewriterUI.ShowMessage("이곳은 미끄럽지 않아");
-            }
+            else if (tag == "Zone2") StopZone1Effects();
+            else if (tag == "StoryBlock") if (typewriterUI != null) typewriterUI.ShowMessage("이곳은 미끄럽지 않아");
         }
     }
 
-    // [수정됨] 페이드 아웃 로직 적용
     void StopZone1Effects()
     {
-        // 1. 함정 정지
         if (freezeCoroutine != null) StopCoroutine(freezeCoroutine);
-        isFreezeTrapActive = false; 
-
-        isFrozen = false;
+        isFreezeTrapActive = false; isFrozen = false;
         if (spriteRenderer != null) spriteRenderer.color = Color.white;
         if (arrowIndicator != null) arrowIndicator.gameObject.SetActive(false);
-        
-        // 2. 눈 파티클 끄기 (더 이상 생성되지 않음)
         if (snowParticle != null) snowParticle.Stop();
-
-        // 3. 브금 페이드 아웃 시작
-        if (bgmAudioSource != null && bgmAudioSource.isPlaying)
-        {
-            StartCoroutine(FadeOutMusic());
-        }
-
-        // 4. 텍스트 지우기
+        if (bgmAudioSource != null && bgmAudioSource.isPlaying) StartCoroutine(FadeOutMusic());
         if (typewriterUI != null) typewriterUI.ShowMessage("");
     }
 
-    // [추가됨] 브금 서서히 끄기
     IEnumerator FadeOutMusic()
     {
-        isFadingOut = true; // "지금 소리 줄이는 중이니까 건드리지 마!"
-        
+        isFadingOut = true; 
         float startVolume = bgmAudioSource.volume;
         float timer = 0f;
-
-        // 지정된 시간(bgmFadeDuration) 동안 볼륨을 줄임
         while (timer < bgmFadeDuration)
         {
             timer += Time.deltaTime;
-            // Lerp: 시작 볼륨에서 0까지 부드럽게 이동
             bgmAudioSource.volume = Mathf.Lerp(startVolume, 0f, timer / bgmFadeDuration);
-            yield return null; // 한 프레임 대기
+            yield return null;
         }
-
-        bgmAudioSource.Stop();   // 완전히 끄기
-        bgmAudioSource.volume = bgmVolume; // 다음 번을 위해 볼륨 원래대로 복구
-        isFadingOut = false; // 페이드 아웃 종료
+        bgmAudioSource.Stop();
+        bgmAudioSource.volume = bgmVolume; 
+        isFadingOut = false;
     }
 
     IEnumerator PeriodicFreezeRoutine()
@@ -281,7 +250,6 @@ public class PlayerController : MonoBehaviour
         {
             if (typewriterUI != null) typewriterUI.ShowMessage(""); 
             yield return new WaitForSeconds(freeTime);
-
             if (typewriterUI != null) typewriterUI.ShowMessage("3");
             yield return new WaitForSeconds(1.0f);
             if (typewriterUI != null) typewriterUI.ShowMessage("2");
@@ -300,35 +268,23 @@ public class PlayerController : MonoBehaviour
                 isFrozen = false;
                 if (spriteRenderer != null) spriteRenderer.color = Color.white; 
             }
-            else
-            {
-                if (typewriterUI != null) typewriterUI.ShowMessage("!얼리기"); 
-                yield return new WaitForSeconds(freezeDuration);
-            }
+            else yield return new WaitForSeconds(freezeDuration);
         }
     }
 
     public void ApplyKnockback(Vector2 direction, float force) { rb.AddForce(direction.normalized * force, ForceMode2D.Impulse); }
 
-    void PlaySfx(AudioClip clip) { if (sfxAudioSource != null && clip != null) { sfxAudioSource.volume = sfxVolume; sfxAudioSource.PlayOneShot(clip); } }
+    void PlaySfx(AudioClip clip) { if (sfxAudioSource != null && clip != null) sfxAudioSource.PlayOneShot(clip); }
 
     void HandleJumpInput() 
     { 
-        if (mainCamera == null) return; if (jumpCooldown > 0) return; if (isOnNoControlIce) return; if (isFrozen) return;
-
-        if (Input.GetMouseButtonDown(0) && isGrounded) 
-        { 
-            isCharging = true; chargeTime = 0f; 
-            if (!isOnIce) { rb.linearVelocity = Vector2.zero; } 
-            if (arrowIndicator != null) { arrowIndicator.gameObject.SetActive(true); arrowIndicator.localScale = new Vector3(1, 1, 1); } 
-        } 
-
+        if (mainCamera == null || jumpCooldown > 0 || isOnNoControlIce || isFrozen) return;
+        if (Input.GetMouseButtonDown(0) && isGrounded) { isCharging = true; chargeTime = 0f; if (arrowIndicator != null) arrowIndicator.gameObject.SetActive(true); } 
         if (isCharging && Input.GetMouseButton(0)) { chargeTime += Time.deltaTime; RotateArrow(); UpdateArrowVisual(); } 
-
         if (isCharging && Input.GetMouseButtonUp(0)) { Jump(); isCharging = false; if (arrowIndicator != null) arrowIndicator.gameObject.SetActive(false); } 
     }
     
-    void RotateArrow() { if (arrowIndicator == null || mainCamera == null) return; Vector3 mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition); mousePos.z = 0; Vector2 direction = (mousePos - transform.position); float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg; bool isFlipped = Mathf.Abs(transform.eulerAngles.y) > 90f; if (isFlipped) arrowIndicator.rotation = Quaternion.Euler(0, 0, angle + 180 + rotationOffset); else arrowIndicator.rotation = Quaternion.Euler(0, 0, angle + rotationOffset); }
-    void UpdateArrowVisual() { if (arrowIndicator == null) return; float ratio = Mathf.Clamp(chargeTime, 0, maxChargeTime) / maxChargeTime; float targetScaleX = 1f + (ratio * 2f); if (transform.localScale.x < 0) arrowIndicator.localScale = new Vector3(-targetScaleX, 1f, 1f); else arrowIndicator.localScale = new Vector3(targetScaleX, 1f, 1f); if (arrowSprite != null) arrowSprite.color = Color.Lerp(Color.yellow, Color.red, ratio); }
-    void Jump() { if (mainCamera == null) return; PlaySfx(jumpSfx); Vector3 mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition); mousePos.z = 0; Vector2 direction = (mousePos - transform.position).normalized; float powerRatio = Mathf.Clamp(chargeTime, 0, maxChargeTime) / maxChargeTime; float finalPower = powerRatio * maxJumpPower; if (finalPower < 5f) finalPower = 5f; jumpCooldown = 0.2f; isGrounded = false; rb.linearVelocity = direction * finalPower; }
+    void RotateArrow() { Vector3 mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition); mousePos.z = 0; Vector2 direction = (mousePos - transform.position); float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg; arrowIndicator.rotation = Quaternion.Euler(0, 0, angle + (Mathf.Abs(transform.eulerAngles.y) > 90f ? 180 : 0) + rotationOffset); }
+    void UpdateArrowVisual() { float ratio = Mathf.Clamp(chargeTime, 0, maxChargeTime) / maxChargeTime; float targetScaleX = 1f + (ratio * 2f); arrowIndicator.localScale = new Vector3(transform.localScale.x < 0 ? -targetScaleX : targetScaleX, 1f, 1f); if (arrowSprite != null) arrowSprite.color = Color.Lerp(Color.yellow, Color.red, ratio); }
+    void Jump() { PlaySfx(jumpSfx); Vector3 mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition); mousePos.z = 0; Vector2 direction = (mousePos - transform.position).normalized; float powerRatio = Mathf.Clamp(chargeTime, 0, maxChargeTime) / maxChargeTime; float finalPower = Mathf.Max(powerRatio * maxJumpPower, 5f); jumpCooldown = 0.2f; isGrounded = false; rb.linearVelocity = direction * finalPower; }
 }
